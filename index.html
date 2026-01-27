@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<table id="grid"></table>
+</div>
+
+
+<script>
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxLkRm5wCz8Pi43J3Viy-JJeOdPF7PinOMv-fY69wqeUuyaLyFAg1o_Le2uzgvTrK0yTQ/exec';
+let sheetId = '';
+let currentTab = '';
+let selectedCell = null;
+
+
+function extractSheetId(url) {
+return url.match(/\/d\/([a-zA-Z0-9-_]+)/)[1];
+}
+
+
+async function loadTabs() {
+const res = await fetch(`${SCRIPT_URL}?action=tabs&sheetId=${sheetId}`);
+const data = await res.json();
+tabs.innerHTML = data.sheets.map(s => `<option>${s}</option>`).join('');
+loadData();
+}
+
+
+async function loadData() {
+currentTab = tabs.value;
+const res = await fetch(`${SCRIPT_URL}?action=data&sheetId=${sheetId}&tab=${currentTab}`);
+const data = await res.json();
+renderTable(data.values);
+}
+
+
+function renderTable(values) {
+grid.innerHTML = '';
+values.forEach((row, r) => {
+const tr = document.createElement('tr');
+row.forEach((cell, c) => {
+const td = document.createElement('td');
+td.textContent = cell;
+td.onclick = () => selectCell(td, r + 1, c + 1);
+tr.appendChild(td);
+});
+grid.appendChild(tr);
+});
+}
+
+
+function selectCell(td, row, col) {
+if (selectedCell) selectedCell.classList.remove('selected');
+td.classList.add('selected');
+selectedCell = td;
+
+
+const value = prompt('Edit cell value', td.textContent);
+if (value !== null) updateCell(row, col, value);
+}
+
+
+async function updateCell(row, col, value) {
+await fetch(SCRIPT_URL, {
+method: 'POST',
+body: JSON.stringify({ sheetId, tab: currentTab, row, col, value })
+});
+selectedCell.textContent = value;
+}
+
+
+sheetUrl.onchange = () => {
+sheetId = extractSheetId(sheetUrl.value);
+loadTabs();
+};
+
+
+tabs.onchange = loadData;
+</script>
+
+
+</body>
+</html>
