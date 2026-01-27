@@ -18,6 +18,11 @@
     font-size: 16px;
   }
 
+  input[readonly] {
+    background-color: #f5f5f5;
+    color: #333;
+  }
+
   .table-container {
     overflow-x: auto;
     border: 1px solid #ddd;
@@ -44,7 +49,7 @@
 <body>
 
 <input
-  id="sheetUrl"
+  id="sheetDisplay"
   type="text"
   placeholder="Paste Google Sheet URL"
 />
@@ -57,16 +62,17 @@
 
 <script>
 /* ================= CONFIG ================= */
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxLkRm5wCz8Pi43J3Viy-JJeOdPF7PinOMv-fY69wqeUuyaLyFAg1o_Le2uzgvTrK0yTQ/exec'; // must end with /exec
-const STORAGE_KEY = 'nkt_sheet_url';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxQm7rvFvSN8JoZhnxtipGnWEId3VhJxW35sN0qaGSMT0X8s-zkXO_1xInw1gRGBOwdtA/exec'; // must end with /exec
+const STORAGE_KEY = 'nkt_sheet_data';
 
 /* ================= ELEMENTS ================= */
-const sheetUrl = document.getElementById('sheetUrl');
+const sheetDisplay = document.getElementById('sheetDisplay');
 const tabs = document.getElementById('tabs');
 const grid = document.getElementById('grid');
 
 /* ================= STATE ================= */
 let sheetId = '';
+let sheetUrl = '';
 let currentTab = '';
 let selectedCell = null;
 
@@ -74,6 +80,15 @@ let selectedCell = null;
 function extractSheetId(url) {
   const match = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
   return match ? match[1] : '';
+}
+
+/* ================= LOAD SHEET NAME ================= */
+async function loadSheetName() {
+  const res = await fetch(
+    `${SCRIPT_URL}?action=info&sheetId=${sheetId}`
+  );
+  const data = await res.json();
+  return data.name;
 }
 
 /* ================= LOAD TABS ================= */
@@ -138,44 +153,59 @@ async function updateCell(row, col, value) {
   await fetch(SCRIPT_URL, {
     method: 'POST',
     body: JSON.stringify({
-      sheetId: sheetId,
+      sheetId,
       tab: currentTab,
-      row: row,
-      col: col,
-      value: value
+      row,
+      col,
+      value
     })
   });
 
   selectedCell.textContent = value;
 }
 
-/* ================= EVENTS ================= */
-sheetUrl.addEventListener('change', () => {
-  const url = sheetUrl.value.trim();
-  sheetId = extractSheetId(url);
+/* ================= INITIAL INPUT HANDLING ================= */
+sheetDisplay.addEventListener('change', async () => {
+  const input = sheetDisplay.value.trim();
 
+  sheetId = extractSheetId(input);
   if (!sheetId) {
     alert('Invalid Google Sheet URL');
     return;
   }
 
-  // Save permanently for this user/device
-  localStorage.setItem(STORAGE_KEY, url);
+  sheetUrl = input;
+  const sheetName = await loadSheetName();
+
+  localStorage.setItem(
+    STORAGE_KEY,
+    JSON.stringify({ sheetUrl, sheetName })
+  );
+
+  sheetDisplay.value = sheetName;
+  sheetDisplay.readOnly = true;
+
+  loadTabs();
+});
+
+/* ================= AUTO LOAD (PERMANENT) ================= */
+window.addEventListener('load', async () => {
+  const saved = localStorage.getItem(STORAGE_KEY);
+  if (!saved) return;
+
+  const data = JSON.parse(saved);
+  sheetUrl = data.sheetUrl;
+  sheetId = extractSheetId(sheetUrl);
+
+  if (!sheetId) return;
+
+  sheetDisplay.value = data.sheetName;
+  sheetDisplay.readOnly = true;
 
   loadTabs();
 });
 
 tabs.addEventListener('change', loadData);
-
-/* ================= AUTO LOAD (PERMANENT) ================= */
-window.addEventListener('load', () => {
-  const savedUrl = localStorage.getItem(STORAGE_KEY);
-  if (savedUrl) {
-    sheetUrl.value = savedUrl;
-    sheetId = extractSheetId(savedUrl);
-    if (sheetId) loadTabs();
-  }
-});
 </script>
 
 </body>
