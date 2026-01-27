@@ -46,7 +46,7 @@
 <input
   id="sheetUrl"
   type="text"
-  placeholder="Paste Google Sheet URL and press Enter"
+  placeholder="Paste Google Sheet URL"
 />
 
 <select id="tabs"></select>
@@ -58,6 +58,7 @@
 <script>
 /* ================= CONFIG ================= */
 const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxLkRm5wCz8Pi43J3Viy-JJeOdPF7PinOMv-fY69wqeUuyaLyFAg1o_Le2uzgvTrK0yTQ/exec'; // must end with /exec
+const STORAGE_KEY = 'nkt_sheet_url';
 
 /* ================= ELEMENTS ================= */
 const sheetUrl = document.getElementById('sheetUrl');
@@ -150,15 +151,31 @@ async function updateCell(row, col, value) {
 
 /* ================= EVENTS ================= */
 sheetUrl.addEventListener('change', () => {
-  sheetId = extractSheetId(sheetUrl.value.trim());
+  const url = sheetUrl.value.trim();
+  sheetId = extractSheetId(url);
+
   if (!sheetId) {
     alert('Invalid Google Sheet URL');
     return;
   }
+
+  // Save permanently for this user/device
+  localStorage.setItem(STORAGE_KEY, url);
+
   loadTabs();
 });
 
 tabs.addEventListener('change', loadData);
+
+/* ================= AUTO LOAD (PERMANENT) ================= */
+window.addEventListener('load', () => {
+  const savedUrl = localStorage.getItem(STORAGE_KEY);
+  if (savedUrl) {
+    sheetUrl.value = savedUrl;
+    sheetId = extractSheetId(savedUrl);
+    if (sheetId) loadTabs();
+  }
+});
 </script>
 
 </body>
