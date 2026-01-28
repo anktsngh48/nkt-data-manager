@@ -1,0 +1,1 @@
+Replica of NKT_Edit_Sheet hardcoded for Bhole redirection url for https://anktsngh48.github.io/nkt-food/. This link is https://anktsngh48.github.io/nkt-data-manager/. This by default open the NKT_Food_Data sheet
