@@ -1,248 +1,330 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>NKT Data Manager</title>
 
 <style>
-  body {
-    font-family: Arial, sans-serif;
-    margin: 10px;
-  }
+:root {
+  --primary: #1a9c5a;
+  --primary-light: #e7f5ee;
+  --border: #d9d9d9;
+  --bg: #f4f6f8;
+  --text: #222;
+}
 
-  input, select {
-    width: 100%;
-    padding: 10px;
-    margin-bottom: 8px;
-    font-size: 16px;
-  }
+body {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, Arial;
+  margin: 0;
+  padding: 12px;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--text);
+}
 
-  input[readonly] {
-    background-color: #f5f5f5;
-  }
+.sheet-bar {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
 
-  .table-container {
-    overflow-x: auto;
-    border: 1px solid #ddd;
-  }
+.sheet-bar input {
+  flex: 1;
+  padding: 10px;
+  font-size: 15px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: white;
+}
 
-  table {
-    border-collapse: collapse;
-    width: 100%;
-  }
+.sheet-bar button {
+  background: #eee;
+  border: none;
+  border-radius: 8px;
+  font-size: 18px;
+  padding: 0 12px;
+}
 
-  td {
-    border: 1px solid #ccc;
-    padding: 8px;
-    min-width: 80px;
-    font-size: 14px;
-  }
+select {
+  width: 100%;
+  padding: 10px;
+  margin-bottom: 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: white;
+  font-size: 15px;
+}
 
-  td.selected {
-    background-color: #e3f2fd;
-  }
+.actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
 
-  td.editing {
-    padding: 0;
-  }
+.actions button {
+  flex: 1;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: white;
+  font-size: 14px;
+}
 
-  td input {
-    width: 100%;
-    height: 100%;
-    border: none;
-    padding: 8px;
-    font-size: 14px;
-    box-sizing: border-box;
-  }
+.actions button:last-child {
+  background: var(--primary);
+  color: white;
+  border: none;
+}
+
+.actions button:disabled {
+  opacity: 0.5;
+}
+
+.table-wrapper {
+  flex: 1;
+  overflow-y: auto;
+  background: white;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  padding: 4px;
+}
+
+/* ===============================
+   TABLE BEAUTY (LOCKED)
+   =============================== */
+table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 1pt;
+}
+
+td {
+  border: 1px solid var(--border);
+  padding: 12px;
+  min-width: 80px;
+  font-size: 14px;
+  background: #fff;
+  border-radius: 6px;
+}
+
+td:active {
+  background: var(--primary-light);
+}
+
+td input {
+  width: 100%;
+  border: none;
+  padding: 12px;
+  font-size: 14px;
+  outline: none;
+  background: transparent;
+}
 </style>
 </head>
 
 <body>
 
-<input
-  id="sheetDisplay"
-  type="text"
-  placeholder="Paste Google Sheet URL"
-/>
+<div class="sheet-bar">
+  <input id="sheetInput" placeholder="Paste Google Sheet URL">
+  <button id="clearBtn">✕</button>
+</div>
 
 <select id="tabs"></select>
 
-<div class="table-container">
+<div class="actions">
+  <button onclick="addRow()">＋ Row</button>
+  <button onclick="addColumn()">＋ Column</button>
+  <button id="undoBtn" onclick="undo()" disabled>Undo</button>
+</div>
+
+<div class="table-wrapper">
   <table id="grid"></table>
 </div>
 
 <script>
-/* ================= CONFIG ================= */
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxQm7rvFvSN8JoZhnxtipGnWEId3VhJxW35sN0qaGSMT0X8s-zkXO_1xInw1gRGBOwdtA/exec'; // must end with /exec
-const STORAGE_KEY = 'nkt_sheet_data';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycby_T3Vh1Y7HLpUzTWrmX4bzPdIKIeKf1a-sRIIXZ5Hqhp8cxPbUzK89S-QnPulS3tbQIg/exec';
+const STORAGE_KEY = 'nkt_sheet';
 
 /* ✅ DEFAULT SHEET URL */
 const DEFAULT_SHEET_URL =
   'https://docs.google.com/spreadsheets/d/17xQ00vPc-fY7jMejgGlWeODQLphwx1f_IMUuxZqrBBI/edit?gid=0#gid=0';
-  
 
-  
-/* ================= ELEMENTS ================= */
-const sheetDisplay = document.getElementById('sheetDisplay');
+const sheetInput = document.getElementById('sheetInput');
+const clearBtn = document.getElementById('clearBtn');
 const tabs = document.getElementById('tabs');
 const grid = document.getElementById('grid');
+const undoBtn = document.getElementById('undoBtn');
 
-/* ================= STATE ================= */
 let sheetId = '';
 let sheetUrl = '';
 let currentTab = '';
-let editingCell = null;
+let editing = false;
 
-/* ================= HELPERS ================= */
+const undoStack = [];
+
 function extractSheetId(url) {
-  const match = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
-  return match ? match[1] : '';
+  const m = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
+  return m ? m[1] : '';
 }
 
-/* ================= LOAD SHEET NAME ================= */
 async function loadSheetName() {
-  const res = await fetch(`${SCRIPT_URL}?action=info&sheetId=${sheetId}`);
-  const data = await res.json();
-  return data.name;
+  const r = await fetch(`${SCRIPT_URL}?action=info&sheetId=${sheetId}`);
+  return (await r.json()).name;
 }
 
-/* ================= LOAD TABS ================= */
-async function loadTabs() {
-  const res = await fetch(`${SCRIPT_URL}?action=tabs&sheetId=${sheetId}`);
-  const data = await res.json();
+async function loadTabs(selectTab = null) {
+  const r = await fetch(`${SCRIPT_URL}?action=tabs&sheetId=${sheetId}`);
+  const data = await r.json();
 
   tabs.innerHTML = '';
-  data.sheets.forEach(name => {
-    const opt = document.createElement('option');
-    opt.value = name;
-    opt.textContent = name;
-    tabs.appendChild(opt);
-  });
+  data.sheets.forEach(s => tabs.add(new Option(s, s)));
+  tabs.add(new Option('+ Add new page', '__add__'));
 
+  if (selectTab) tabs.value = selectTab;
   loadData();
 }
 
-/* ================= LOAD DATA ================= */
 async function loadData() {
+  if (tabs.value === '__add__') {
+    const r = await fetch(SCRIPT_URL, {
+      method: 'POST',
+      body: JSON.stringify({ action: 'addSheet', sheetId })
+    });
+    const res = await r.json();
+    return loadTabs(res.name);
+  }
+
   currentTab = tabs.value;
-  const res = await fetch(
-    `${SCRIPT_URL}?action=data&sheetId=${sheetId}&tab=${currentTab}`
-  );
-  const data = await res.json();
-  renderTable(data.values);
+  const r = await fetch(`${SCRIPT_URL}?action=data&sheetId=${sheetId}&tab=${currentTab}`);
+  render((await r.json()).values);
 }
 
-/* ================= RENDER TABLE ================= */
-function renderTable(values) {
+function render(values) {
   grid.innerHTML = '';
-
-  values.forEach((row, r) => {
+  values.forEach((r, ri) => {
     const tr = document.createElement('tr');
-
-    row.forEach((cell, c) => {
+    r.forEach((c, ci) => {
       const td = document.createElement('td');
-      td.textContent = cell ?? '';
-      td.onclick = () => startEdit(td, r + 1, c + 1);
+      td.textContent = c ?? '';
+      td.onclick = () => editCell(td, ri + 1, ci + 1);
       tr.appendChild(td);
     });
-
     grid.appendChild(tr);
   });
 }
 
-/* ================= INLINE EDIT ================= */
-function startEdit(td, row, col) {
-  if (editingCell) return;
+function editCell(td, row, col) {
+  if (editing) return;
+  editing = true;
 
-  editingCell = td;
-  td.classList.add('editing');
+  const old = td.textContent;
+  td.innerHTML = `<input value="${old}">`;
+  const input = td.firstChild;
 
-  const oldValue = td.textContent;
-  td.innerHTML = '';
-
-  const input = document.createElement('input');
-  input.value = oldValue;
-  td.appendChild(input);
   input.focus();
+  const len = input.value.length;
+  input.setSelectionRange(len, len);
+  input.scrollLeft = input.scrollWidth;
 
-  input.onblur = () => saveEdit(td, input.value, oldValue, row, col);
-  input.onkeydown = (e) => {
-    if (e.key === 'Enter') {
-      input.blur();
-    }
-    if (e.key === 'Escape') {
-      cancelEdit(td, oldValue);
+  input.onblur = async () => {
+    const val = input.value;
+    td.textContent = val;
+    editing = false;
+
+    if (val !== old) {
+      undoStack.push({ tab: currentTab, row, col, value: old });
+      undoBtn.disabled = false;
+
+      await fetch(SCRIPT_URL, {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'updateCell',
+          sheetId,
+          tab: currentTab,
+          row,
+          col,
+          value: val
+        })
+      });
     }
   };
 }
 
-async function saveEdit(td, newValue, oldValue, row, col) {
-  td.classList.remove('editing');
-  td.textContent = newValue;
-  editingCell = null;
+async function undo() {
+  if (!undoStack.length) return;
 
-  if (newValue !== oldValue) {
-    await fetch(SCRIPT_URL, {
-      method: 'POST',
-      body: JSON.stringify({
-        sheetId,
-        tab: currentTab,
-        row,
-        col,
-        value: newValue
-      })
-    });
-  }
+  const last = undoStack.pop();
+  await fetch(SCRIPT_URL, {
+    method: 'POST',
+    body: JSON.stringify({
+      action: 'undoCell',
+      sheetId,
+      tab: last.tab,
+      row: last.row,
+      col: last.col,
+      value: last.value
+    })
+  });
+
+  undoBtn.disabled = !undoStack.length;
+  loadData();
 }
 
-function cancelEdit(td, value) {
-  td.classList.remove('editing');
-  td.textContent = value;
-  editingCell = null;
+function addRow() {
+  fetch(SCRIPT_URL, {
+    method: 'POST',
+    body: JSON.stringify({ action: 'addRow', sheetId, tab: currentTab })
+  }).then(loadData);
 }
 
-/* ================= INPUT HANDLING ================= */
-sheetDisplay.addEventListener('change', async () => {
-  const input = sheetDisplay.value.trim();
-  sheetId = extractSheetId(input);
+function addColumn() {
+  fetch(SCRIPT_URL, {
+    method: 'POST',
+    body: JSON.stringify({ action: 'addColumn', sheetId, tab: currentTab })
+  }).then(loadData);
+}
 
-  if (!sheetId) {
-    alert('Invalid Google Sheet URL');
-    return;
-  }
-
-  sheetUrl = input;
-  const sheetName = await loadSheetName();
-
-  localStorage.setItem(
-    STORAGE_KEY,
-    JSON.stringify({ sheetUrl, sheetName })
-  );
-
-  sheetDisplay.value = sheetName;
-  sheetDisplay.readOnly = true;
-
-  loadTabs();
-});
-
-/* ================= AUTO LOAD ================= */
-window.addEventListener('load', async () => {
-  const saved = localStorage.getItem(STORAGE_KEY);
-  if (!saved) return;
-
-  const data = JSON.parse(saved);
-  sheetUrl = data.sheetUrl;
+sheetInput.onchange = async () => {
+  sheetUrl = sheetInput.value;
   sheetId = extractSheetId(sheetUrl);
-  if (!sheetId) return;
+  if (!sheetId) return alert('Invalid URL');
 
-  sheetDisplay.value = data.sheetName;
-  sheetDisplay.readOnly = true;
+  const name = await loadSheetName();
+  sheetInput.value = name;
+  sheetInput.readOnly = true;
 
+  localStorage.setItem(STORAGE_KEY, sheetUrl);
   loadTabs();
-});
+};
 
-tabs.addEventListener('change', loadData);
+clearBtn.onclick = () => {
+  localStorage.removeItem(STORAGE_KEY);
+  sheetInput.value = '';
+  sheetInput.readOnly = false;
+  grid.innerHTML = '';
+  tabs.innerHTML = '';
+  undoStack.length = 0;
+  undoBtn.disabled = true;
+};
+
+/* ===============================
+   AUTO LOAD (DEFAULT APPLIED)
+   =============================== */
+window.onload = async () => {
+  sheetUrl = localStorage.getItem(STORAGE_KEY) || DEFAULT_SHEET_URL;
+  localStorage.setItem(STORAGE_KEY, sheetUrl);
+
+  sheetId = extractSheetId(sheetUrl);
+  const name = await loadSheetName();
+
+  sheetInput.value = name;
+  sheetInput.readOnly = true;
+  loadTabs();
+};
+
+tabs.onchange = loadData;
 </script>
 
 </body>
